@@ -1,0 +1,91 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install the packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check the three big packages imported
+        run: python -c "import rdkit, sklearn, streamlit; print('ok')"
+
+      - name: Show the versions that were installed
+        run: |
+          python -c "import streamlit, sklearn, rdkit, pandas, numpy, scipy, matplotlib; \
+            print('streamlit', streamlit.__version__); \
+            print('scikit-learn', sklearn.__version__); \
+            print('rdkit', rdkit.__version__); \
+            print('pandas', pandas.__version__); \
+            print('numpy', numpy.__version__); \
+            print('scipy', scipy.__version__); \
+            print('matplotlib', matplotlib.__version__)"
+
+      - name: Run the tests
+        run: pytest -q -W error::DeprecationWarning
+
+      - name: Check the app actually starts and answers
+        run: |
+          streamlit run app.py \
+            --server.headless true \
+            --server.port 8501 \
+            --browser.gatherUsageStats false \
+            > streamlit.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -sf http://localhost:8501/_stcore/health > /dev/null; then
+              echo "The app answered on /_stcore/health after about $((attempt * 2)) seconds."
+              pkill -f "streamlit run" || true
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The app never became healthy. Its log:"
+          cat streamlit.log
+          exit 1
+
+      - name: Show the Streamlit log, so any warning is visible
+        if: always()
+        run: cat streamlit.log || true
+
+  performance:
+    name: Performance test (40,000 molecules)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Time the whole pipeline
+        run: python scripts/performance_test.py

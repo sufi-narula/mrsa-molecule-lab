@@ -1,0 +1,17 @@
+name,smiles
+ciprofloxacin_also_in_training,C1CC1N2C=C(C(=O)C3=CC(=C(C=C32)N4CCNCC4)F)C(=O)O
+ofloxacin,CC1COC2=C3N1C=C(C(=O)C3=CC(=C2N4CCN(CC4)C)F)C(=O)O
+cephalexin_also_in_training,CC1=C(N2C(C(C2=O)NC(=O)C(C3=CC=CC=C3)N)SC1)C(=O)O
+sulfanilamide,C1=CC(=CC=C1N)S(=O)(=O)N
+sulfamethazine,CC1=CC(=NC(=N1)NS(=O)(=O)C2=CC=C(C=C2)N)C
+pyrazinamide,C1=CN=C(C=N1)C(=O)N
+nitrofurazone,C(=NNC(=O)N)C1=CC=C(O1)[N+](=O)[O-]
+benzocaine,CCOC(=O)C1=CC=C(C=C1)N
+salicylic_acid,C1=CC=C(C(=C1)C(=O)O)O
+caffeine,CN1C=NC2=C1C(=O)N(C(=O)N2C)C
+ethylene_glycol,C(CO)O
+histidine,C1=C(NC=N1)CC(C(=O)O)N
+betaine,C[N+](C)(C)CC(=O)[O-]
+duplicate_caffeine,CN1C=NC2=C1C(=O)N(C(=O)N2C)C
+broken_row_unclosed_ring,C1CC
+broken_row_not_a_molecule,hello

@@ -73,6 +73,36 @@ def _as_bytes(file_like) -> bytes:
     return file_like.read()
 
 
+def detect_separator(data: bytes) -> str:
+    """
+    Work out whether a text file is separated by commas, tabs or semicolons.
+
+    We look at the header line and count each candidate, then pick the most
+    common one. If the header contains none of them the file has a single
+    column, and we return a comma so pandas reads it as exactly that.
+
+    Why not let pandas sniff it: pandas' sniffer raises or guesses wildly on a
+    one-column file, which used to turn a tidy list of molecules into three
+    columns called "Unnamed: 0", "Unnamed: 1" and "Unnamed: 2".
+    """
+    try:
+        text = data[:65536].decode("utf-8", errors="replace")
+    except Exception:
+        return ","
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return ","
+    header = lines[0]
+    counts = {
+        ",": header.count(","),
+        "\t": header.count("\t"),
+        ";": header.count(";"),
+        "|": header.count("|"),
+    }
+    best = max(counts, key=lambda key: counts[key])
+    return best if counts[best] > 0 else ","
+
+
 def read_table(file_like, filename: str, sheet_name=None) -> pd.DataFrame:
     """
     Read a data file into a pandas table.
@@ -96,24 +126,15 @@ def read_table(file_like, filename: str, sheet_name=None) -> pd.DataFrame:
         except Exception as exc:
             raise ValueError(f"I could not read that Excel file: {exc}") from exc
     else:
-        # sep=None with the python engine asks pandas to sniff the separator,
-        # which handles both commas and tabs in .txt files.
+        separator = detect_separator(data)
         try:
             frame = pd.read_csv(
                 io.BytesIO(data),
-                sep=None,
-                engine="python",
-                comment=None,
+                sep=separator,
                 skip_blank_lines=True,
             )
-        except Exception:
-            # Fall back to a plain comma read, which gives a clearer error.
-            try:
-                frame = pd.read_csv(io.BytesIO(data))
-            except Exception as exc:
-                raise ValueError(
-                    f"I could not read that file as a table: {exc}"
-                ) from exc
+        except Exception as exc:
+            raise ValueError(f"I could not read that file as a table: {exc}") from exc
 
     if isinstance(frame, dict):  # read_excel with sheet_name=None
         frame = next(iter(frame.values()))
@@ -601,6 +622,7 @@ __all__ = [
     "SMILES_HEADER_HINTS",
     "clean_molecules",
     "detect_activity_column",
+    "detect_separator",
     "detect_smiles_column",
     "excel_sheet_names",
     "label_binary",

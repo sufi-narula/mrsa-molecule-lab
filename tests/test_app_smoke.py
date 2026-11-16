@@ -43,13 +43,35 @@ def widget_by_key(app, kind: str, key: str):
 
 
 def all_text(app) -> str:
-    """Every piece of text the page showed, joined together for searching."""
+    """
+    Every piece of text the page showed, joined together for searching.
+
+    Headings matter here: Streamlit's test framework keeps st.title,
+    st.header and st.subheader in their own lists rather than lumping them in
+    with st.markdown, so leaving them out made the page look as though whole
+    sections were missing.
+    """
     pieces = []
-    for kind in ("markdown", "caption", "info", "success", "warning", "error", "text"):
+    for kind in (
+        "title",
+        "header",
+        "subheader",
+        "markdown",
+        "caption",
+        "info",
+        "success",
+        "warning",
+        "error",
+        "text",
+        "metric",
+    ):
         for element in getattr(app, kind, []):
             value = getattr(element, "value", None)
             if value:
                 pieces.append(str(value))
+            label = getattr(element, "label", None)
+            if label:
+                pieces.append(str(label))
     return "\n".join(pieces)
 
 
@@ -345,6 +367,27 @@ def test_batch_funnel_never_grows(trained_app):
         int(passes_both.sum()),
     ]
     assert counts == sorted(counts, reverse=True)
+
+
+def test_batch_tab_survives_a_one_molecule_shortlist(trained_app):
+    """
+    With a strict score cut-off only a molecule or two survives the filters.
+
+    Streamlit refuses a slider whose minimum equals its maximum, which used to
+    crash this whole tab with a raw error. The tab must now cope quietly.
+    """
+    app = trained_app
+    widget_by_key(app, "button", "batch_demo").click().run()
+    assert not app.exception
+
+    score_sliders = [s for s in app.slider if "scoring at least" in s.label]
+    assert score_sliders, "the score cut-off slider is missing"
+    score_sliders[0].set_value(0.95).run()
+
+    assert not app.exception
+    errors = "\n".join(e.value for e in app.error)
+    assert "min_value" not in errors
+    assert "Traceback" not in errors
 
 
 def test_batch_results_are_downloadable(trained_app):

@@ -214,9 +214,31 @@ def test_read_table_rejects_an_empty_file():
 
 
 def test_read_table_reads_a_one_column_file():
+    """
+    A file with no separator at all must come back as exactly one column.
+
+    This used to produce three columns called "Unnamed: 0", "Unnamed: 1" and
+    "Unnamed: 2", because pandas' separator sniffer guesses badly when there is
+    nothing to sniff.
+    """
     frame = data_io.read_table(b"smiles\nCCO\nCCC\n", "one.csv")
     assert list(frame.columns) == ["smiles"]
     assert len(frame) == 2
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (b"name,smiles,mic\n", ","),
+        (b"name\tsmiles\tmic\n", "\t"),
+        (b"name;smiles;mic\n", ";"),
+        (b"name|smiles|mic\n", "|"),
+        (b"smiles\n", ","),          # one column: fall back to a comma
+        (b"", ","),                  # nothing at all: fall back to a comma
+    ],
+)
+def test_detect_separator(header, expected):
+    assert data_io.detect_separator(header) == expected
 
 
 def test_read_table_reads_a_tab_separated_file():
@@ -501,11 +523,28 @@ def test_hypergeometric_p_value_against_hand_calculation():
     """
     A bag of 100 molecules, 10 of them active. We draw 10 and get 5 actives.
 
-    P(at least 5) = 1 - P(0..4). Worked out from the hypergeometric formula
-    this is about 0.0016349 (scipy's hypergeom.sf(4, 100, 10, 10)).
+    P(at least 5) is the sum of P(exactly k) for k = 5 to 10, where each term
+    is C(10, k) * C(90, 10 - k) / C(100, 10).
+
+    C(100, 10) = 17,310,309,456,440, and the numerators are:
+
+        k = 5 :  252 * 43,949,268 = 11,075,215,536
+        k = 6 :  210 *  2,555,190 =    536,589,900
+        k = 7 :  120 *    117,480 =     14,097,600
+        k = 8 :   45 *      4,005 =        180,225
+        k = 9 :   10 *         90 =            900
+        k = 10:    1 *          1 =              1
+                                    --------------
+                           total  = 11,626,084,162
+
+    11,626,084,162 / 17,310,309,456,440 = 0.000671628...
+
+    So getting 5 of your 10 picks right, when only 1 in 10 molecules is active,
+    happens by luck about 7 times in ten thousand.
     """
     p = experiment.hypergeometric_p_value(5, 100, 10, 10)
-    assert p == pytest.approx(0.00163493, rel=1e-4)
+    assert p == pytest.approx(11_626_084_162 / 17_310_309_456_440, rel=1e-9)
+    assert p == pytest.approx(0.000671628, rel=1e-5)
 
 
 def test_hypergeometric_p_value_simple_cases():

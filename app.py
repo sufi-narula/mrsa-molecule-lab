@@ -1220,13 +1220,22 @@ with tab_results:
             n_test = int(len(y_test))
             default_n = max(3, int(round(0.03 * n_test)))
             default_n = min(default_n, n_test)
-            n_pick = st.slider(
-                "How many top-ranked molecules we would buy and test in the lab",
-                min_value=1,
-                max_value=n_test,
-                value=default_n,
-                step=1,
-            )
+            # Same guard as the Batch Screen tab: a one-molecule test set gives
+            # a slider no range to work with, and Streamlit refuses that.
+            if n_test > 1:
+                n_pick = st.slider(
+                    "How many top-ranked molecules we would buy and test in the lab",
+                    min_value=1,
+                    max_value=n_test,
+                    value=default_n,
+                    step=1,
+                )
+            else:
+                n_pick = 1
+                st.caption(
+                    "There is only one molecule in the test set, so there is nothing "
+                    "to choose between. Use a larger dataset for a meaningful comparison."
+                )
 
             result = experiment.model_vs_random(scores, y_test, n_pick)
 
@@ -1729,14 +1738,31 @@ with tab_batch:
             n_pass_score = int(passes_score.sum())
             n_pass_both = int(passes_both.sum())
 
-            top_n = st.slider(
-                "How many to “buy and test”",
-                min_value=1,
-                max_value=max(1, n_pass_both) if n_pass_both > 0 else 1,
-                value=min(10, max(1, n_pass_both)),
-                step=1,
-                disabled=n_pass_both == 0,
-            )
+            # A slider needs a range. When 0 or 1 molecules survive the filters
+            # there is nothing to choose between, so we show a line of text
+            # instead. (Streamlit refuses a slider whose minimum equals its
+            # maximum, which used to crash this tab.)
+            if n_pass_both > 1:
+                top_n = st.slider(
+                    "How many to “buy and test”",
+                    min_value=1,
+                    max_value=n_pass_both,
+                    value=min(10, n_pass_both),
+                    step=1,
+                )
+            elif n_pass_both == 1:
+                top_n = 1
+                st.caption(
+                    "Only one molecule passed both filters, so that is the whole "
+                    "shortlist. Lower the score cut-off or allow more similarity to "
+                    "see more."
+                )
+            else:
+                top_n = 0
+                st.caption(
+                    "No molecules passed both filters. Lower the score cut-off, or "
+                    "allow molecules that look more like the known actives."
+                )
             shortlist_size = min(top_n, n_pass_both)
 
             stages = [

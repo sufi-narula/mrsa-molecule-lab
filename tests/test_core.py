@@ -401,10 +401,73 @@ def test_ring_free_molecules_get_their_own_groups():
     assert len(set(keys)) == 3
 
 
+def _murcko_works() -> bool:
+    """
+    Is RDKit's scaffold decomposition usable on this machine?
+
+    Some RDKit builds raise RuntimeError("bad any cast") from MurckoDecompose.
+    When that happens the scaffold split quietly degrades, which the app now
+    reports loudly — so the tests below check the reporting rather than
+    pretending the chemistry worked.
+    """
+    keys = splitting.scaffold_keys(["Cc1ccccc1"])
+    return splitting.count_broken_scaffolds(keys) == 0
+
+
 def test_molecules_sharing_a_skeleton_share_a_group():
     # Benzene, toluene and aniline all reduce to a benzene scaffold.
     keys = splitting.scaffold_keys(["c1ccccc1", "Cc1ccccc1", "Nc1ccccc1"])
+    if not _murcko_works():
+        pytest.skip("RDKit's MurckoDecompose is broken in this build")
     assert len(set(keys)) == 1
+
+
+def test_broken_scaffolds_are_counted_not_hidden(monkeypatch):
+    """
+    A split must never report a reassuring "0 shared scaffolds" that was built
+    out of RDKit failures.
+
+    This is the honesty guard: if the chemistry cannot be computed, the report
+    has to say so instead of quietly handing every molecule its own group and
+    calling the result a scaffold split.
+    """
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("bad any cast")
+
+    monkeypatch.setattr(
+        splitting.MurckoScaffold, "MurckoScaffoldSmiles", explode
+    )
+
+    smiles = ["c1ccccc1", "Cc1ccccc1", "Nc1ccccc1", "c1ccncc1"]
+    keys = splitting.scaffold_keys(smiles)
+    assert splitting.count_broken_scaffolds(keys) == 4
+
+    labels = np.array([1, 0, 1, 0])
+    report = splitting.split_report(smiles, labels, [0, 1], [2, 3], method="scaffold")
+    assert report["broken_scaffolds"] == 4
+    assert report["notice"] == splitting.ALL_BROKEN_NOTICE
+
+
+def test_partly_broken_scaffolds_are_reported(monkeypatch):
+    """Some molecules failing should still raise a warning, not pass silently."""
+    real = splitting.MurckoScaffold.MurckoScaffoldSmiles
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("bad any cast")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(splitting.MurckoScaffold, "MurckoScaffoldSmiles", flaky)
+
+    smiles = ["c1ccccc1", "Cc1ccccc1"]
+    labels = np.array([1, 0])
+    report = splitting.split_report(smiles, labels, [0], [1], method="scaffold")
+    assert report["broken_scaffolds"] >= 1
+    assert report["notice"] is not None
+    assert "could not work out the chemical skeleton" in report["notice"]
 
 
 def test_scaffold_split_shares_no_scaffolds(demo_clean):

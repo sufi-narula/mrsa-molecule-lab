@@ -1053,8 +1053,19 @@ with tab_train:
                 st.warning(report["notice"], icon="⚠️")
 
             st.subheader("How the data was split")
+            broken_count = report.get("broken_scaffolds", 0)
             cols = st.columns(4)
-            cols[0].metric("Different scaffolds", f"{report['n_scaffolds']:,}")
+            # When RDKit could not decompose anything, "different scaffolds" is
+            # just a count of failures wearing a chemistry label. Show n/a
+            # rather than a number that means nothing.
+            if broken_count and broken_count == report["n_total"]:
+                cols[0].metric(
+                    "Different scaffolds",
+                    "n/a",
+                    help="RDKit could not work out any scaffolds on this computer.",
+                )
+            else:
+                cols[0].metric("Different scaffolds", f"{report['n_scaffolds']:,}")
             cols[1].metric(
                 "Training molecules",
                 f"{report['n_train']:,}",
@@ -1065,9 +1076,27 @@ with tab_train:
                 f"{report['n_test']:,}",
                 f"{report['test_active']:,} active",
             )
-            cols[3].metric("Scaffolds on both sides", f"{report['shared_scaffolds']:,}")
+            if broken_count and broken_count == report["n_total"]:
+                cols[3].metric(
+                    "Scaffolds on both sides",
+                    "n/a",
+                    help="There were no scaffolds to compare, so this check could not run.",
+                )
+            else:
+                cols[3].metric("Scaffolds on both sides", f"{report['shared_scaffolds']:,}")
 
-            if report["method"] == "scaffold" and report["shared_scaffolds"] == 0:
+            broken = report.get("broken_scaffolds", 0)
+            if broken:
+                # Never show the reassuring green tick when the scaffolds it
+                # would be based on could not actually be computed.
+                st.error(
+                    f"RDKit failed to work out the chemical skeleton for {broken:,} of "
+                    f"{report['n_total']:,} molecules, so “scaffolds shared” below is not "
+                    "a trustworthy honesty check on this computer. The numbers from the "
+                    "model are still real; the split just is not as strict as it claims.",
+                    icon="🚨",
+                )
+            elif report["method"] == "scaffold" and report["shared_scaffolds"] == 0:
                 st.success(
                     "No chemical skeleton appears on both sides, so every test molecule is "
                     "genuinely new chemistry to the model.",

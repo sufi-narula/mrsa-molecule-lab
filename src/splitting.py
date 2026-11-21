@@ -35,6 +35,25 @@ FALLBACK_NOTICE = (
 )
 
 
+#: Prefix of the key given to a molecule whose scaffold could not be computed.
+#: These are counted and reported, never quietly treated as real scaffolds.
+BROKEN_PREFIX = "__no_scaffold_"
+
+BROKEN_SCAFFOLD_NOTICE = (
+    "RDKit could not work out the chemical skeleton for {n} of {total} molecules "
+    "on this computer, so those molecules were each put in a group of their own. "
+    "A split like that is closer to a random split than a real scaffold split, so "
+    "treat the “scaffolds shared” number with suspicion."
+)
+
+ALL_BROKEN_NOTICE = (
+    "RDKit could not work out the chemical skeleton for ANY molecule on this "
+    "computer, so a real scaffold split was impossible and a random split was "
+    "used instead. This is a problem with the RDKit installation, not with your "
+    "data."
+)
+
+
 def scaffold_key(smiles: str, index: int) -> str:
     """
     The group key for one molecule.
@@ -43,6 +62,12 @@ def scaffold_key(smiles: str, index: int) -> str:
     rings at all (ethanol, glycine, urea) have an empty scaffold; lumping all
     of those into one giant group would be wrong, so each ring-free molecule
     gets its own unique key instead.
+
+    If RDKit fails outright (some builds raise "bad any cast" from
+    MurckoDecompose), the molecule gets a unique key prefixed with
+    BROKEN_PREFIX. That is NOT a silent fallback: scaffold_keys counts those
+    keys and the split report shows the count, because a split built from
+    failures is really a random split wearing a scaffold split's name.
     """
     mol = mol_from_smiles(smiles)
     if mol is None:
@@ -50,7 +75,7 @@ def scaffold_key(smiles: str, index: int) -> str:
     try:
         core = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
     except Exception:
-        return f"__no_scaffold_{index}__"
+        return f"{BROKEN_PREFIX}{index}__"
     if not core:
         return f"__no_rings_{index}__"
     return core
@@ -59,6 +84,17 @@ def scaffold_key(smiles: str, index: int) -> str:
 def scaffold_keys(smiles_list) -> list:
     """The group key for every molecule, in the same order as the input."""
     return [scaffold_key(smi, i) for i, smi in enumerate(smiles_list)]
+
+
+def count_broken_scaffolds(keys) -> int:
+    """
+    How many molecules RDKit could not decompose at all.
+
+    The app shows this number. If it is large, the "scaffold split" is not
+    really a scaffold split and the user deserves to be told so rather than
+    shown a reassuring "0 scaffolds shared".
+    """
+    return sum(1 for key in keys if str(key).startswith(BROKEN_PREFIX))
 
 
 def group_by_scaffold(smiles_list) -> dict:
@@ -143,10 +179,23 @@ def split_report(smiles_list, labels, train_idx, test_idx, method: str, notice=N
     keys = scaffold_keys(smiles_list)
     train_keys = {keys[i] for i in train_idx}
     test_keys = {keys[i] for i in test_idx}
+
+    # Molecules RDKit could not decompose are not real scaffolds. Count them,
+    # and say so loudly, because "0 scaffolds shared" built out of failures
+    # would be a reassuring number that means nothing.
+    total = int(len(smiles_list))
+    broken = count_broken_scaffolds(keys)
+    if broken and notice is None:
+        if broken == total:
+            notice = ALL_BROKEN_NOTICE
+        else:
+            notice = BROKEN_SCAFFOLD_NOTICE.format(n=broken, total=total)
+
     return {
         "method": method,
         "notice": notice,
-        "n_total": int(len(smiles_list)),
+        "broken_scaffolds": broken,
+        "n_total": total,
         "n_scaffolds": len(set(keys)),
         "n_train": len(train_idx),
         "n_test": len(test_idx),
@@ -231,8 +280,12 @@ def make_split(smiles_list, labels, method: str, test_fraction: float, seed: int
 
 
 __all__ = [
+    "ALL_BROKEN_NOTICE",
+    "BROKEN_PREFIX",
+    "BROKEN_SCAFFOLD_NOTICE",
     "FALLBACK_NOTICE",
     "MAX_ATTEMPTS",
+    "count_broken_scaffolds",
     "MIN_TEST_PER_CLASS",
     "group_by_scaffold",
     "make_split",
